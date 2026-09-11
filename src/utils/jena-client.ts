@@ -9,6 +9,14 @@ const DEFAULT_DATASET = process.env.DEFAULT_DATASET || 'ds';
 const JENA_USERNAME = process.env.JENA_USERNAME || '';
 const JENA_PASSWORD = process.env.JENA_PASSWORD || '';
 
+// Het pad van het query-endpoint ONDER de dataset. Fuseki's standaardconfig
+// registreert zowel /sparql als /query, maar een dataset die in een
+// config-bestand haar endpoints zelf benoemt heeft vaak alleen 'sparql'
+// (zo ook deploy/fuseki/echo.ttl in dit project). 'sparql' werkt dus in
+// beide gevallen; 'query', de oude waarde hier, gaf 404 op zo'n dataset.
+const JENA_QUERY_PATH = process.env.JENA_QUERY_PATH || 'sparql';
+const JENA_UPDATE_PATH = process.env.JENA_UPDATE_PATH || 'update';
+
 /**
  * Represents the result of a SPARQL query
  */
@@ -79,12 +87,18 @@ export class JenaClient {
         console.warn('💡 Query suggestions:', improvements.join(', '));
       }
 
+      // CONSTRUCT en DESCRIBE geven een graaf terug, geen bindingstabel;
+      // met alleen sparql-results+json in Accept antwoordt Fuseki met 406.
+      const accept = (validation.queryType === 'CONSTRUCT' || validation.queryType === 'DESCRIBE')
+        ? 'text/turtle'
+        : 'application/sparql-results+json';
+
+      // POST en niet GET: een graaf opbouwen gaat met queries die ruim langer
+      // zijn dan wat er in een URL past.
       const config: any = {
-        params: {
-          query: sparqlQuery,
-        },
         headers: {
-          Accept: 'application/sparql-results+json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: accept,
         },
       };
 
@@ -96,7 +110,8 @@ export class JenaClient {
         };
       }
 
-      const response = await axios.get(`${this.baseUrl}/${this.dataset}/query`, config);
+      const response = await axios.post(`${this.baseUrl}/${this.dataset}/${JENA_QUERY_PATH}`,
+        new URLSearchParams({ query: sparqlQuery }), config);
 
       return response.data;
     } catch (error) {
@@ -143,7 +158,7 @@ export class JenaClient {
       }
 
       await axios.post(
-        `${this.baseUrl}/${this.dataset}/update`,
+        `${this.baseUrl}/${this.dataset}/${JENA_UPDATE_PATH}`,
         new URLSearchParams({ update: sparqlUpdate }),
         config
       );

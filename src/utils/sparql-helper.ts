@@ -31,9 +31,14 @@ export class SparqlHelper {
     else if (upperQuery.includes('DELETE')) queryType = 'DELETE';
     
     // Check for query form
-    const hasQueryForm = ['SELECT', 'CONSTRUCT', 'ASK', 'DESCRIBE', 'INSERT', 'DELETE'].some(form => 
-      upperQuery.includes(form)
-    );
+    // De graafbeheer-operaties staan er expliciet bij. Zonder hen weigerde
+    // deze validator een kale `CREATE GRAPH <...>` of `LOAD <...> INTO GRAPH
+    // <...>` als "geen queryvorm" -- precies de opdrachten waarmee je een
+    // graaf aanlegt.
+    const hasQueryForm = [
+      'SELECT', 'CONSTRUCT', 'ASK', 'DESCRIBE', 'INSERT', 'DELETE',
+      'CREATE', 'DROP', 'CLEAR', 'LOAD', 'COPY', 'MOVE', 'ADD', 'WITH',
+    ].some(form => upperQuery.includes(form));
     
     if (!hasQueryForm) {
       errors.push("Query must include a query form: SELECT, CONSTRUCT, ASK, DESCRIBE, INSERT, or DELETE");

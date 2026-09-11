@@ -40,10 +40,11 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-console.log(`Connecting to Jena endpoint: ${jenaEndpoint}`);
-console.log(`Using default dataset: ${defaultDataset}`);
+// stderr, niet stdout: over stdout loopt het JSON-RPC-kanaal van MCP.
+console.error(`Connecting to Jena endpoint: ${jenaEndpoint}`);
+console.error(`Using default dataset: ${defaultDataset}`);
 if (jenaUsername) {
-  console.log(`Using authentication for user: ${jenaUsername}`);
+  console.error(`Using authentication for user: ${jenaUsername}`);
 }
 
 // Define the tool schemas upfront
@@ -199,10 +200,9 @@ const server = new Server(
     name: "mcp-jena",
     version: "1.0.0",
     description: "MCP server for Apache Jena SPARQL queries",
-    vendor: "ramuzes",
-    schemas: {
-      tools: toolSchemas,
-    }
+    // `vendor` en `schemas` zijn hier weg: de huidige MCP-SDK kent die velden
+    // niet in Implementation, en tsc weigerde daarop te bouwen. De tools
+    // worden hoe dan ook via de ListTools-handler hieronder aangeboden.
   },
   {
     capabilities: {
