@@ -1,5 +1,10 @@
 # MCP Server for Apache Jena
 
+> **Deze kloon wijkt af van upstream.** Zie [AFWIJKINGEN.md](AFWIJKINGEN.md):
+> upstream installeert niet, bouwt niet, spreekt het verkeerde endpoint aan en
+> weigert juist de opdrachten om een graaf aan te leggen. Alles wat hieronder
+> staat geldt, met die reparaties erbovenop.
+
 A Model Context Protocol (MCP) server that connects AI agents to Apache Jena for SPARQL query capabilities.
 
 ## Overview
@@ -115,6 +120,11 @@ You can also configure the server using environment variables:
 - `DEFAULT_DATASET`: Default dataset name (default: ds)
 - `JENA_USERNAME`: Username for HTTP Basic authentication to Jena Fuseki
 - `JENA_PASSWORD`: Password for HTTP Basic authentication to Jena Fuseki
+- `JENA_QUERY_PATH`: Query endpoint path under the dataset (default: `sparql`).
+  Fuseki's default config registers both `sparql` and `query`, but a dataset
+  that names its own endpoints in a config file often has only `sparql`.
+- `JENA_UPDATE_PATH`: Update endpoint path under the dataset (default: `update`)
+- `JENA_TIMEOUT_MS`: HTTP timeout in milliseconds (default: `60000`)
 - `PORT`: Port for the MCP server (for HTTP transport, default: 8080)
 - `API_KEY`: API key for MCP server authentication
 

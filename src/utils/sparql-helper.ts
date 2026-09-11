@@ -2,7 +2,7 @@ export interface ValidationResult {
   valid: boolean;
   errors: string[];
   suggestions: string[];
-  queryType?: 'SELECT' | 'CONSTRUCT' | 'ASK' | 'DESCRIBE' | 'INSERT' | 'DELETE' | 'UNKNOWN';
+  queryType?: 'SELECT' | 'CONSTRUCT' | 'ASK' | 'DESCRIBE' | 'INSERT' | 'DELETE' | 'UPDATE' | 'UNKNOWN';
 }
 
 export class SparqlHelper {
@@ -21,14 +21,13 @@ export class SparqlHelper {
     const upperQuery = query.toUpperCase();
     const trimmedQuery = query.trim();
     
-    // Detect query type
-    let queryType: ValidationResult['queryType'] = 'UNKNOWN';
-    if (upperQuery.includes('SELECT')) queryType = 'SELECT';
-    else if (upperQuery.includes('CONSTRUCT')) queryType = 'CONSTRUCT';
-    else if (upperQuery.includes('ASK')) queryType = 'ASK';
-    else if (upperQuery.includes('DESCRIBE')) queryType = 'DESCRIBE';
-    else if (upperQuery.includes('INSERT')) queryType = 'INSERT';
-    else if (upperQuery.includes('DELETE')) queryType = 'DELETE';
+    // Het EERSTE sleutelwoord bepaalt de vorm, niet "komt het ergens voor".
+    // Met includes() in vaste volgorde werd
+    //   CONSTRUCT { ?s ?p ?o } WHERE { { SELECT ... } }
+    // een SELECT, en dan vraagt de client het verkeerde antwoordformaat aan
+    // en antwoordt Fuseki met 406. Commentaar, literals en IRI's gaan er
+    // eerst uit: een prefix als <http://example.org/select> is geen queryvorm.
+    const queryType = SparqlHelper.detectQueryType(query);
     
     // Check for query form
     // De graafbeheer-operaties staan er expliciet bij. Zonder hen weigerde
@@ -46,11 +45,12 @@ export class SparqlHelper {
       return { valid: false, errors, suggestions, queryType };
     }
     
-    // Check for WHERE clause in queries that typically need it
-    if ((queryType === 'SELECT' || queryType === 'CONSTRUCT') && 
-        !upperQuery.includes('WHERE') && !upperQuery.includes('INSERT DATA') && !upperQuery.includes('DELETE DATA')) {
-      errors.push("SELECT and CONSTRUCT queries typically require a WHERE clause");
-      suggestions.push("Add: WHERE { ?subject ?predicate ?object }");
+    // GEEN error: het sleutelwoord WHERE is in SPARQL optioneel.
+    // `SELECT ?s { ?s ?p ?o }` is geldig en werd hier geweigerd voordat de
+    // query Fuseki ook maar bereikte. Alleen een groepsgraafpatroon ontbreekt
+    // echt, en dat is aan de parser van Fuseki om te melden.
+    if ((queryType === 'SELECT' || queryType === 'CONSTRUCT') && !query.includes('{')) {
+      suggestions.push("A SELECT or CONSTRUCT normally needs a group graph pattern: { ?s ?p ?o }");
     }
     
     // Check for balanced braces
@@ -69,12 +69,14 @@ export class SparqlHelper {
       suggestions.push("Check that every ( has a matching )");
     }
     
-    // Check for missing semicolon after PREFIX declarations
-    const prefixLines = query.split('\n').filter(line => 
-      line.trim().toUpperCase().startsWith('PREFIX') && !line.trim().endsWith('.')
+    // Hier stond het advies dat PREFIX-regels op een punt moeten eindigen.
+    // Dat is Turtle, niet SPARQL: `PREFIX ex: <http://example.org/> .` is in
+    // SPARQL juist een syntaxfout. Opvolgen van dat advies brak de query.
+    const dottedPrefixes = query.split('\n').filter(line =>
+      line.trim().toUpperCase().startsWith('PREFIX') && line.trim().endsWith('.')
     );
-    if (prefixLines.length > 0) {
-      suggestions.push("PREFIX declarations should end with a dot (.)");
+    if (dottedPrefixes.length > 0) {
+      errors.push("PREFIX declarations must NOT end with a dot in SPARQL (that is Turtle syntax)");
     }
     
     // Suggest LIMIT for potentially large result sets
@@ -94,9 +96,11 @@ export class SparqlHelper {
       }
     }
     
-    // Check for FILTER placement
-    if (upperQuery.includes('FILTER') && !upperQuery.includes('WHERE')) {
-      errors.push("FILTER clauses must be inside WHERE blocks");
+    // Idem: FILTER hoort in een groepsgraafpatroon, en dat patroon heeft
+    // het woord WHERE niet nodig. `SELECT ?s { ?s ?p ?o FILTER(isIRI(?s)) }`
+    // is geldig; dit was een harde blokkade op geldige SPARQL.
+    if (upperQuery.includes('FILTER') && !query.includes('{')) {
+      errors.push("FILTER must appear inside a group graph pattern { }");
     }
     
     return { 
@@ -108,6 +112,29 @@ export class SparqlHelper {
   }
   
   /**
+   * Bepaalt de queryvorm uit het eerste sleutelwoord dat echt een sleutelwoord
+   * is: commentaar, tekstliteralen en IRI's tellen niet mee.
+   */
+  static detectQueryType(query: string): ValidationResult['queryType'] {
+    const bare = query
+      .replace(/#[^\n]*/g, ' ')
+      .replace(/"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, ' ')
+      .replace(/<[^>]*>/g, ' ');
+
+    const m = bare.match(
+      /\b(SELECT|CONSTRUCT|ASK|DESCRIBE|INSERT|DELETE|LOAD|CLEAR|CREATE|DROP|COPY|MOVE|ADD|WITH)\b/i);
+    if (!m) return 'UNKNOWN';
+
+    const word = m[1].toUpperCase();
+    if (word === 'SELECT' || word === 'CONSTRUCT' || word === 'ASK' || word === 'DESCRIBE') {
+      return word;
+    }
+    if (word === 'INSERT' || word === 'DELETE') return word;
+    // LOAD/CLEAR/CREATE/DROP/COPY/MOVE/ADD/WITH zijn updates op graafniveau.
+    return 'UPDATE';
+  }
+
+  /**
    * Provides enhanced error messages with SPARQL-specific guidance
    */
   static enhanceErrorMessage(originalError: string, query: string): string {
@@ -118,7 +145,7 @@ export class SparqlHelper {
     // Common error patterns and their solutions
     if (originalError.includes('400') || originalError.includes('Bad Request')) {
       enhancedMessage += "\n\n🔧 Common SPARQL syntax issues:";
-      enhancedMessage += "\n• Check PREFIX declarations end with dots (.)";
+      enhancedMessage += "\n• PREFIX lines take no trailing dot (that is Turtle, not SPARQL)";
       enhancedMessage += "\n• Ensure proper triple pattern syntax: ?subject ?predicate ?object";
       enhancedMessage += "\n• Verify WHERE clause is properly formed with { }";
       enhancedMessage += "\n• Check for missing closing braces }";
@@ -135,6 +162,17 @@ export class SparqlHelper {
     
     if (originalError.includes('404') || originalError.includes('Not Found')) {
       enhancedMessage += "\n\n🎯 Endpoint issue: Verify the dataset name and Fuseki URL";
+      enhancedMessage += "\n• List the datasets that actually exist: GET <fuseki-url>/$/datasets";
+    }
+
+    // 405 is de fout die je krijgt als het PAD bestaat maar de operatie er
+    // niet op staat -- bijvoorbeeld een update sturen naar een query-endpoint,
+    // of JENA_QUERY_PATH dat niet klopt met de dataset-config.
+    if (originalError.includes('405') || originalError.includes('Method Not Allowed')) {
+      enhancedMessage += "\n\n🚧 Wrong endpoint path for this operation, OR the dataset does not exist.";
+      enhancedMessage += "\n• Fuseki answers 405 (not 404) when the dataset name is unknown";
+      enhancedMessage += "\n• A query goes to /<dataset>/sparql, an update to /<dataset>/update";
+      enhancedMessage += "\n• Check JENA_QUERY_PATH / JENA_UPDATE_PATH against GET <fuseki-url>/$/datasets";
     }
     
     if (originalError.includes('timeout')) {

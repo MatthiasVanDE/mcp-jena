@@ -112,6 +112,13 @@ SPARQL Update Operations:
 - LOAD/CLEAR: Load/clear entire graphs
 - CREATE/DROP: Manage graph lifecycle
 
+IMPORTANT on TDB2 (the storage this server talks to): CREATE GRAPH <g> on its
+own does NOT make a graph that anything can see. It returns 200, but the graph
+only starts existing once it holds at least one triple -- list_graphs will not
+show it, and GET /data?graph=g returns 404. To create a graph, insert into it:
+  INSERT DATA { GRAPH <g> { <s> <p> <o> } }
+That single statement creates the graph and fills it; no CREATE needed.
+
 Basic Update Syntax:
 - INSERT DATA { <subject> <predicate> <object> }
 - DELETE DATA { <subject> <predicate> <object> }
@@ -143,6 +150,11 @@ Example Updates:
   {
     name: "list_graphs",
     description: `List all available named graphs in an Apache Jena dataset.
+
+Lists graphs that hold at least one triple. On TDB2 that is the same set as
+"all graphs that exist": an empty graph -- one just made with CREATE GRAPH, say --
+is indistinguishable from a graph that was never made. If a graph you created is
+missing from this list, it has no triples yet.
 
 Named graphs in RDF provide context and provenance for triples. Each graph is identified by a URI.
 This tool helps discover what data contexts are available in your dataset.
@@ -225,9 +237,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const client = new JenaClient(jenaEndpoint, dataset, jenaUsername, jenaPassword);
       const result = await client.executeQuery(query);
-      
+
+      // CONSTRUCT en DESCRIBE geven Turtle terug, dus een string. Die door
+      // JSON.stringify halen levert één regel vol \n-ontsnappingen op --
+      // onleesbaar, en niet meer te kopiëren naar een .ttl-bestand.
+      const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [{ type: "text", text }],
         isError: false,
       };
     } catch (error) {

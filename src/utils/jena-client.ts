@@ -17,6 +17,27 @@ const JENA_PASSWORD = process.env.JENA_PASSWORD || '';
 const JENA_QUERY_PATH = process.env.JENA_QUERY_PATH || 'sparql';
 const JENA_UPDATE_PATH = process.env.JENA_UPDATE_PATH || 'update';
 
+// Zonder timeout wacht axios oneindig. Een query die op een grote graaf
+// vastloopt zou de MCP-client dan voorgoed laten hangen, zonder foutmelding
+// en zonder manier om af te breken.
+const JENA_TIMEOUT_MS = Number(process.env.JENA_TIMEOUT_MS || 60000);
+
+/**
+ * Haalt de uitleg uit het antwoord van Fuseki. Fuseki antwoordt met PLATTE
+ * TEKST ("Parse error: ... line 3"), niet met JSON. De oude code las
+ * `error.response.data.message` en dat is op een string altijd undefined, dus
+ * bleef er alleen "Request failed with status code 400" over -- precies de
+ * regel die niets zegt.
+ */
+function fusekiUitleg(error: any): string {
+  const data = error?.response?.data;
+  if (typeof data === 'string' && data.trim()) return data.trim().slice(0, 2000);
+  if (data && typeof data === 'object') {
+    return (data.message || JSON.stringify(data)).slice(0, 2000);
+  }
+  return '';
+}
+
 /**
  * Represents the result of a SPARQL query
  */
@@ -100,6 +121,11 @@ export class JenaClient {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: accept,
         },
+        timeout: JENA_TIMEOUT_MS,
+        // Een graaf uitlezen levert zo een antwoord van tientallen megabytes;
+        // axios kapt standaard af op 10 MB en zou dat stil doen.
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
       };
 
       // Add authentication if credentials are provided
@@ -117,7 +143,7 @@ export class JenaClient {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const enhancedError = SparqlHelper.enhanceErrorMessage(
-          `SPARQL query failed: ${error.message}. ${error.response?.data?.message || ''}`,
+          `SPARQL query failed: ${error.message}. ${fusekiUitleg(error)}`,
           sparqlQuery
         );
         throw new Error(enhancedError);
@@ -147,6 +173,8 @@ export class JenaClient {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
+        timeout: JENA_TIMEOUT_MS,
+        maxBodyLength: Infinity,
       };
 
       // Add authentication if credentials are provided
@@ -167,7 +195,7 @@ export class JenaClient {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const enhancedError = SparqlHelper.enhanceErrorMessage(
-          `SPARQL update failed: ${error.message}. ${error.response?.data?.message || ''}`,
+          `SPARQL update failed: ${error.message}. ${fusekiUitleg(error)}`,
           sparqlUpdate
         );
         throw new Error(enhancedError);
@@ -181,6 +209,12 @@ export class JenaClient {
    * @returns Array of graph URIs
    */
   async listGraphs(): Promise<string[]> {
+    // Alleen niet-lege grafen, en dat is geen tekortkoming van deze query:
+    // in TDB2 IS een lege graaf niet. `CREATE GRAPH <g>` antwoordt met 200,
+    // maar daarna geeft zowel `GRAPH ?g { }` als het Graph Store Protocol
+    // (GET /data?graph=g -> 404) aan dat er niets is. De graaf ontstaat pas
+    // bij de eerste triple. Een UNION met `GRAPH ?g { }` verandert daar niets
+    // aan en kost op een grote dataset alleen tijd -- geprobeerd, gemeten.
     const query = `
       SELECT DISTINCT ?g
       WHERE {
