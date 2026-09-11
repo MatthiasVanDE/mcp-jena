@@ -95,3 +95,46 @@ verandert niets en kost alleen tijd; die is teruggedraaid. In plaats daarvan
 staat het gedrag nu in de beschrijving van de tools, zodat het model dat ze
 gebruikt niet denkt een graaf te hebben aangelegd die er niet is. Gebruik
 `INSERT DATA { GRAPH <g> { ... } }`: dat maakt de graaf en vult hem in één keer.
+
+---
+
+# Uitbouw (derde commit)
+
+Upstream biedt vier gereedschappen. Die dekken SPARQL, maar niets eromheen:
+geen adminlaag, geen Graph Store Protocol, en geen enkele begrenzing op wat er
+terugkomt. Dertien nu.
+
+| Nieuw | Waarom |
+|---|---|
+| `list_datasets` | Fuseki antwoordt **405, niet 404**, op een dataset die niet bestaat. Zonder dit is die fout niet te onderscheiden van een verkeerd endpointpad. |
+| `server_status` | versie, uptime, statistieken per dataset |
+| `get_graph` | een graaf van 30 kB in één aanroep, buiten de queryparser om |
+| `put_graph` | een graaf vervangen met een PUT — hoe een schemalaag hoort te worden gesynchroniseerd |
+| `delete_graph` | een graaf weggooien, met een verwijzing naar `backup` ernaast |
+| `load_file` | RDF van schijf; een ontologie van 44 kB als `INSERT DATA` kost ~11.000 tokens |
+| `backup` | er is geen ongedaan maken na `DROP GRAPH` |
+| `compact` | TDB2-ruimte terugwinnen |
+| `task_status` | backup en compact draaien op de achtergrond |
+
+En drie dingen die geen gereedschap zijn:
+
+16. **Er zat geen rem op antwoorden.** `limit`, `offset`, `cursor`, `maxRows` en
+    `truncate` kwamen nul keer in de broncode voor. Een `SELECT ?s ?p ?o` zonder
+    LIMIT op 1599 triples gaf 630.000 tekens — ~157.000 tokens in één antwoord.
+    Nu: `JENA_DEFAULT_LIMIT` achter een SELECT zonder eigen LIMIT,
+    `JENA_MAX_RESULT_CHARS` als harde afkapping, en `out_file` naar schijf.
+
+17. **Geen read-only modus.** `JENA_READ_ONLY=true` laat de vijf schrijvende
+    gereedschappen uit de lijst, en weigert ze als **eerste** stap in de handler.
+    Die volgorde is geen detail: stond de controle verderop, dan ving de
+    bestaande if-keten `execute_sparql_update` al af en ging het verzoek alsnog
+    de deur uit. Dat is precies wat er bij de eerste poging gebeurde.
+
+18. **Bestandstoegang zonder grens is geen bestandstoegang maar een lek.**
+    Alles wat leest of schrijft blijft binnen `JENA_FILES_DIR`; zonder die
+    instelling staat het uit. `../` eruit klimmen wordt geweigerd.
+
+Daarnaast `JENA_CONTEXT_FILE`: een JSON met prefixen en de betekenis van de
+named graphs, die aan de beschrijving van de SPARQL-gereedschappen wordt
+gehangen. Zo weet het model welke grafen er zijn en wat erin hoort, terwijl
+deze server generiek blijft — die kennis is configuratie, geen broncode.
