@@ -138,3 +138,49 @@ Daarnaast `JENA_CONTEXT_FILE`: een JSON met prefixen en de betekenis van de
 named graphs, die aan de beschrijving van de SPARQL-gereedschappen wordt
 gehangen. Zo weet het model welke grafen er zijn en wat erin hoort, terwijl
 deze server generiek blijft — die kennis is configuratie, geen broncode.
+
+# Annotaties en tests (vierde commit)
+
+Externe feedback op deze server noemde twee dingen, en beide klopten: geen
+enkel gereedschap droeg annotaties, en er was geen test die ook maar één
+gereedschap bij naam noemde.
+
+19. **Alle dertien gereedschappen dragen nu alle vier de MCP-hints**
+    (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`),
+    expliciet als boolean — ook waar de waarde gelijk is aan de standaard. Een
+    ontbrekende hint is voor een host namelijk niet "false" maar "onbekend", en
+    registers weigeren daarop. Ze staan als tabel in `src/tools.ts`, mét de
+    afweging per regel. De server valt bij het starten om als een gereedschap
+    geen annotaties heeft; zo kan een nieuw gereedschap er niet zonder langs.
+
+    Twee keuzes die niet vanzelf spreken staan daar ook uitgelegd:
+    `execute_sparql_query` en `get_graph` heten read-only hoewel ze met
+    `out_file` een bestand schrijven (optioneel, alleen binnen
+    `JENA_FILES_DIR`, en de dataset blijft ongemoeid — ze op false zetten zou
+    elke SELECT een bevestigingsvraag opleveren), en `load_file` heet
+    destructief hoewel het standaard aanvult, omdat `replace: true` de
+    doelgraaf leegmaakt en een hint beschrijft wat een gereedschap kán.
+
+20. **De gereedschapslijst staat nu in `src/tools.ts`, los van de server.**
+    `index.ts` roept onderaan `runServer()` aan, dus wie daaruit importeert
+    start een stdio-server — daarmee viel de lijst niet te testen. De nieuwe
+    module bevat alleen gegevens en heeft geen bijwerking bij importeren.
+
+21. **`npm test` draait 71 tests, elk gereedschap komt bij naam voor.**
+    Twee bestanden, geen nieuwe afhankelijkheden (`node --test`, en Node strijkt
+    de types zelf weg):
+
+    * `test/gereedschappen.test.ts` — het contract per gereedschap: vier
+      booleaanse hints, geen read-only dat tegelijk destructief heet, een
+      invoerschema waarin elk verplicht veld ook beschreven staat, en de
+      afspraak dat alles in `SCHRIJVENDE_TOOLS` ook `readOnlyHint: false` draagt.
+    * `test/aanroepen.test.ts` — elk gereedschap één keer echt aangeroepen over
+      stdio, tegen een nagemaakte Fuseki (`test/hulp/stub-fuseki.ts`), met een
+      assertie op het pad waar het verzoek terechtkwam. Dat is de test die de
+      twee fouten van hierboven had gevangen: een query naar `/query` in plaats
+      van `/sparql`, en een `console.log` die het JSON-RPC-kanaal bederft.
+      Ook de grens van `JENA_FILES_DIR` wordt hier van beide kanten beproefd.
+
+    De tests draaien tegen `dist/`, dus `npm test` bouwt eerst. Ze staan bewust
+    buiten `tsconfig.json`: zou `include` ze meenemen, dan verschuift de
+    uitvoermap naar `dist/src/index.js` en wijst `mcp-jena.sh` naar niets meer.
