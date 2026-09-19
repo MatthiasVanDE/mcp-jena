@@ -145,7 +145,7 @@ function contextText(): string {
 const server = new Server(
   {
     name: "mcp-jena",
-    version: "1.0.0",
+    version: "1.1.0",
     description: "MCP server for Apache Jena SPARQL queries",
     // `vendor` and `schemas` are gone from here: the current MCP SDK does not
     // know those fields on Implementation, and tsc refused to build on them.

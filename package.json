@@ -1,6 +1,6 @@
 {
   "name": "mcp-jena",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Model Context Protocol server for Apache Jena SPARQL queries",
   "main": "dist/index.js",
   "type": "module",
