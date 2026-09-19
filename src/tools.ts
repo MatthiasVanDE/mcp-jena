@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
-// De gereedschapslijst, apart van de server
+// The tool list, kept apart from the server
 // ---------------------------------------------------------------------------
 //
-// Deze module bevat alleen gegevens: geen verbinding, geen transport, geen
-// bijwerking bij importeren. Dat is met opzet -- `index.ts` roept onderaan
-// `runServer()` aan, dus wie daaruit importeert start een stdio-server. Een
-// test kan deze module wel gewoon inladen.
+// This module holds data only: no connection, no transport, no side effect on
+// import. That is deliberate -- `index.ts` calls `runServer()` at the bottom,
+// so importing from there starts a stdio server. A test can load this module
+// as it is.
 
-/** De ruwe schema's; de annotaties komen er onderaan bij. */
-const ruweSchemas = [
+/** The raw schemas; the annotations are attached at the bottom. */
+const rawSchemas = [
   {
     name: "execute_sparql_query",
     description: `Execute a SPARQL query against an Apache Jena dataset.
@@ -317,32 +317,32 @@ Returns its start time, and "finished" once it is done.`,
 ];
 
 // ---------------------------------------------------------------------------
-// De annotaties
+// The annotations
 // ---------------------------------------------------------------------------
 //
-// MCP kent vier hints per gereedschap. Een host gebruikt ze om te beslissen of
-// hij de gebruiker om bevestiging vraagt voordat hij aanroept; ze zijn
-// adviserend, dus nooit een vervanging voor JENA_READ_ONLY of voor de
-// padcontrole in veiligPad(). Alle vier staan hier expliciet op elk
-// gereedschap, ook waar de waarde de standaard is: een ontbrekende hint is
-// voor een host niet "false" maar "onbekend", en registers weigeren erop.
+// MCP defines four hints per tool. A host uses them to decide whether to ask
+// the user for confirmation before invoking; they are advisory, so never a
+// substitute for JENA_READ_ONLY or for the path check in safePath(). All four
+// are declared explicitly on every tool, including where the value equals the
+// default: to a host, a missing hint is not "false" but "unknown", and
+// directories reject on that.
 //
-//   readOnlyHint     verandert dit gereedschap iets?
-//   destructiveHint  kan er iets verloren gaan dat er al was?
-//   idempotentHint   levert twee keer hetzelfde aanroepen dezelfde toestand op?
-//   openWorldHint    praat het met iets buiten deze server?
+//   readOnlyHint     does this tool change anything?
+//   destructiveHint  can something that was already there be lost?
+//   idempotentHint   does calling it twice leave the same state?
+//   openWorldHint    does it talk to something outside this server?
 //
-// Twee afwegingen die niet vanzelf spreken:
+// Two calls that are not self-evident:
 //
-// * `execute_sparql_query` en `get_graph` heten hier read-only, terwijl ze met
-//   `out_file` wél een bestand schrijven. Dat schrijven is optioneel, gaat
-//   uitsluitend naar JENA_FILES_DIR en raakt de dataset niet. Ze op false
-//   zetten zou elke SELECT in een bevestigingsvraag laten eindigen -- dat kost
-//   meer dan het waard is. Wie dat anders weegt, zet deze twee op false; de
-//   tests hier blijven kloppen.
-// * `load_file` en `put_graph` heten destructief omdat `replace: true` de
-//   doelgraaf eerst leegmaakt. De standaard van load_file is aanvullen, maar
-//   een hint beschrijft wat een gereedschap KAN, niet wat het meestal doet.
+// * `execute_sparql_query` and `get_graph` are called read-only here, while
+//   with `out_file` they do write a file. That write is optional, goes only to
+//   JENA_FILES_DIR, and never touches the dataset. Marking them false would end
+//   every SELECT in a confirmation prompt -- that costs more than it is worth.
+//   Anyone weighing it differently can set these two to false; the tests here
+//   still hold.
+// * `load_file` and `put_graph` are called destructive because `replace: true`
+//   empties the target graph first. The default for load_file is to append, but
+//   a hint describes what a tool CAN do, not what it usually does.
 
 export interface ToolAnnotations {
   readOnlyHint: boolean;
@@ -351,8 +351,8 @@ export interface ToolAnnotations {
   openWorldHint: boolean;
 }
 
-const annotaties: Record<string, ToolAnnotations> = {
-  // Lezen uit de dataset.
+const annotations: Record<string, ToolAnnotations> = {
+  // Reading from the dataset.
   execute_sparql_query:   { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: true  },
   list_graphs:            { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: true  },
   get_graph:              { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: true  },
@@ -360,55 +360,54 @@ const annotaties: Record<string, ToolAnnotations> = {
   server_status:          { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: true  },
   task_status:            { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: true  },
 
-  // Geen server, geen netwerk: de sjablonen staan in deze code. Het enige
-  // gereedschap met openWorldHint false.
+  // No server, no network: the templates live in this code. The only tool with
+  // openWorldHint false.
   sparql_query_templates: { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: false },
 
-  // Schrijven. Een willekeurige UPDATE kan DELETE of DROP zijn en twee keer
-  // uitvoeren geeft niet dezelfde toestand (INSERT met bnodes, DELETE dat de
-  // tweede keer niets meer vindt) -- vandaar idempotent false.
+  // Writing. An arbitrary UPDATE may be a DELETE or a DROP, and running it
+  // twice does not leave the same state (an INSERT with blank nodes, a DELETE
+  // that finds nothing the second time) -- hence idempotent false.
   execute_sparql_update:  { readOnlyHint: false, destructiveHint: true,  idempotentHint: false, openWorldHint: true  },
 
-  // PUT en DELETE van het Graph Store Protocol zijn per definitie idempotent:
-  // dezelfde aanroep herhalen laat de graaf in dezelfde toestand achter.
+  // Graph Store Protocol PUT and DELETE are idempotent by definition: repeating
+  // the same call leaves the graph in the same state.
   put_graph:              { readOnlyHint: false, destructiveHint: true,  idempotentHint: true,  openWorldHint: true  },
   delete_graph:           { readOnlyHint: false, destructiveHint: true,  idempotentHint: true,  openWorldHint: true  },
 
-  // Aanvullen (POST) is niet idempotent: blanke knopen krijgen bij elke
-  // inlading nieuwe labels, dus hetzelfde bestand twee keer laden verdubbelt
-  // wat eraan hangt.
+  // Appending (POST) is not idempotent: blank nodes get fresh labels on every
+  // load, so loading the same file twice duplicates whatever hangs off them.
   load_file:              { readOnlyHint: false, destructiveHint: true,  idempotentHint: false, openWorldHint: true  },
 
-  // Beide schrijven op de server (een backupbestand, een nieuwe TDB2-generatie)
-  // zonder dat er data verdwijnt, en beide starten elke keer een nieuwe taak
-  // met een nieuw taaknummer.
+  // Both write on the server (a backup file, a new TDB2 generation) without any
+  // data disappearing, and both start a fresh task with a fresh task id on
+  // every call.
   backup:                 { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true  },
   compact:                { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true  },
 };
 
 /**
- * De gereedschapslijst zoals ListTools hem aanbiedt, annotaties inbegrepen.
+ * The tool list as ListTools offers it, annotations included.
  *
- * Ontbreekt er een, dan valt de server meteen bij het starten om in plaats van
- * stilzwijgend een gereedschap zonder hints aan te bieden -- een nieuw
- * gereedschap zonder annotaties is een fout, geen detail.
+ * If one is missing, the server falls over on startup rather than quietly
+ * offering a tool without hints -- a new tool without annotations is a bug, not
+ * a detail.
  */
-export const toolSchemas = ruweSchemas.map(t => {
-  const a = annotaties[t.name];
-  if (!a) throw new Error(`Gereedschap ${t.name} heeft geen annotaties in tools.ts`);
+export const toolSchemas = rawSchemas.map(t => {
+  const a = annotations[t.name];
+  if (!a) throw new Error(`Tool ${t.name} has no annotations in tools.ts`);
   return { ...t, annotations: a };
 });
 
 /**
- * Welke gereedschappen de DATASET veranderen. In read-only modus worden ze niet
- * aangeboden; niet aanbieden is strenger dan weigeren bij aanroep, want wat
- * niet in de lijst staat probeert een model niet.
+ * Which tools change the DATASET. In read-only mode they are not offered at
+ * all; not offering is stricter than refusing on call, because a model does not
+ * attempt what is not in the list.
  *
- * Dit is niet hetzelfde als `readOnlyHint === false`: `backup` en `compact`
- * schrijven wel op de server, maar veranderen geen triple, en blijven daarom
- * ook read-only bruikbaar. De tests bewaken één kant van die verhouding --
- * alles wat hier staat, moet readOnlyHint false hebben.
+ * This is not the same as `readOnlyHint === false`: `backup` and `compact` do
+ * write on the server, but change no triple, and so stay usable in read-only
+ * mode. The tests guard one direction of that relation -- everything listed
+ * here must have readOnlyHint false.
  */
-export const SCHRIJVENDE_TOOLS = new Set([
+export const WRITING_TOOLS = new Set([
   "execute_sparql_update", "put_graph", "delete_graph", "load_file", "compact",
 ]);

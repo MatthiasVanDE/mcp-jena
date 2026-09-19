@@ -21,19 +21,19 @@ export class SparqlHelper {
     const upperQuery = query.toUpperCase();
     const trimmedQuery = query.trim();
     
-    // Het EERSTE sleutelwoord bepaalt de vorm, niet "komt het ergens voor".
-    // Met includes() in vaste volgorde werd
+    // The FIRST keyword decides the form, not "does it occur anywhere".
+    // With includes() in a fixed order,
     //   CONSTRUCT { ?s ?p ?o } WHERE { { SELECT ... } }
-    // een SELECT, en dan vraagt de client het verkeerde antwoordformaat aan
-    // en antwoordt Fuseki met 406. Commentaar, literals en IRI's gaan er
-    // eerst uit: een prefix als <http://example.org/select> is geen queryvorm.
+    // became a SELECT, whereupon the client asks for the wrong response format
+    // and Fuseki answers 406. Comments, literals and IRIs are stripped first: a
+    // prefix such as <http://example.org/select> is not a query form.
     const queryType = SparqlHelper.detectQueryType(query);
     
     // Check for query form
-    // De graafbeheer-operaties staan er expliciet bij. Zonder hen weigerde
-    // deze validator een kale `CREATE GRAPH <...>` of `LOAD <...> INTO GRAPH
-    // <...>` als "geen queryvorm" -- precies de opdrachten waarmee je een
-    // graaf aanlegt.
+    // The graph management operations are listed explicitly. Without them this
+    // validator rejected a bare `CREATE GRAPH <...>` or `LOAD <...> INTO GRAPH
+    // <...>` as "no query form" -- precisely the statements that bring a graph
+    // into being.
     const hasQueryForm = [
       'SELECT', 'CONSTRUCT', 'ASK', 'DESCRIBE', 'INSERT', 'DELETE',
       'CREATE', 'DROP', 'CLEAR', 'LOAD', 'COPY', 'MOVE', 'ADD', 'WITH',
@@ -45,10 +45,10 @@ export class SparqlHelper {
       return { valid: false, errors, suggestions, queryType };
     }
     
-    // GEEN error: het sleutelwoord WHERE is in SPARQL optioneel.
-    // `SELECT ?s { ?s ?p ?o }` is geldig en werd hier geweigerd voordat de
-    // query Fuseki ook maar bereikte. Alleen een groepsgraafpatroon ontbreekt
-    // echt, en dat is aan de parser van Fuseki om te melden.
+    // NOT an error: the WHERE keyword is optional in SPARQL.
+    // `SELECT ?s { ?s ?p ?o }` is valid and was rejected here before the query
+    // ever reached Fuseki. Only a missing group graph pattern is a real
+    // problem, and that is for Fuseki's parser to report.
     if ((queryType === 'SELECT' || queryType === 'CONSTRUCT') && !query.includes('{')) {
       suggestions.push("A SELECT or CONSTRUCT normally needs a group graph pattern: { ?s ?p ?o }");
     }
@@ -69,9 +69,9 @@ export class SparqlHelper {
       suggestions.push("Check that every ( has a matching )");
     }
     
-    // Hier stond het advies dat PREFIX-regels op een punt moeten eindigen.
-    // Dat is Turtle, niet SPARQL: `PREFIX ex: <http://example.org/> .` is in
-    // SPARQL juist een syntaxfout. Opvolgen van dat advies brak de query.
+    // This used to advise that PREFIX lines must end in a dot. That is Turtle,
+    // not SPARQL: in SPARQL, `PREFIX ex: <http://example.org/> .` is itself a
+    // syntax error. Following that advice broke the query.
     const dottedPrefixes = query.split('\n').filter(line =>
       line.trim().toUpperCase().startsWith('PREFIX') && line.trim().endsWith('.')
     );
@@ -96,9 +96,9 @@ export class SparqlHelper {
       }
     }
     
-    // Idem: FILTER hoort in een groepsgraafpatroon, en dat patroon heeft
-    // het woord WHERE niet nodig. `SELECT ?s { ?s ?p ?o FILTER(isIRI(?s)) }`
-    // is geldig; dit was een harde blokkade op geldige SPARQL.
+    // Likewise: FILTER belongs inside a group graph pattern, and that pattern
+    // does not need the word WHERE. `SELECT ?s { ?s ?p ?o FILTER(isIRI(?s)) }`
+    // is valid; this used to be a hard block on valid SPARQL.
     if (upperQuery.includes('FILTER') && !query.includes('{')) {
       errors.push("FILTER must appear inside a group graph pattern { }");
     }
@@ -112,8 +112,8 @@ export class SparqlHelper {
   }
   
   /**
-   * Bepaalt de queryvorm uit het eerste sleutelwoord dat echt een sleutelwoord
-   * is: commentaar, tekstliteralen en IRI's tellen niet mee.
+   * Determines the query form from the first keyword that really is a keyword:
+   * comments, string literals and IRIs do not count.
    */
   static detectQueryType(query: string): ValidationResult['queryType'] {
     const bare = query
@@ -130,7 +130,7 @@ export class SparqlHelper {
       return word;
     }
     if (word === 'INSERT' || word === 'DELETE') return word;
-    // LOAD/CLEAR/CREATE/DROP/COPY/MOVE/ADD/WITH zijn updates op graafniveau.
+    // LOAD/CLEAR/CREATE/DROP/COPY/MOVE/ADD/WITH are graph-level updates.
     return 'UPDATE';
   }
 
@@ -165,9 +165,9 @@ export class SparqlHelper {
       enhancedMessage += "\n• List the datasets that actually exist: GET <fuseki-url>/$/datasets";
     }
 
-    // 405 is de fout die je krijgt als het PAD bestaat maar de operatie er
-    // niet op staat -- bijvoorbeeld een update sturen naar een query-endpoint,
-    // of JENA_QUERY_PATH dat niet klopt met de dataset-config.
+    // 405 is what you get when the PATH exists but the operation is not
+    // offered on it -- sending an update to a query endpoint, say, or a
+    // JENA_QUERY_PATH that does not match the dataset configuration.
     if (originalError.includes('405') || originalError.includes('Method Not Allowed')) {
       enhancedMessage += "\n\n🚧 Wrong endpoint path for this operation, OR the dataset does not exist.";
       enhancedMessage += "\n• Fuseki answers 405 (not 404) when the dataset name is unknown";

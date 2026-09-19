@@ -1,9 +1,9 @@
 # MCP Server for Apache Jena
 
-> **Deze kloon wijkt af van upstream.** Zie [AFWIJKINGEN.md](AFWIJKINGEN.md):
-> upstream installeert niet, bouwt niet, spreekt het verkeerde endpoint aan en
-> weigert juist de opdrachten om een graaf aan te leggen. Alles wat hieronder
-> staat geldt, met die reparaties erbovenop.
+> **This clone deviates from upstream.** See [DEVIATIONS.md](DEVIATIONS.md):
+> upstream does not install, does not build, addresses the wrong endpoint, and
+> rejects the very statements that create a graph. Everything below holds, with
+> those repairs on top.
 
 A Model Context Protocol (MCP) server that connects AI agents to Apache Jena for SPARQL query capabilities.
 
@@ -13,9 +13,12 @@ This project implements an MCP server that allows AI agents (such as Cursor, Cla
 
 ## Features
 
-- Execute SPARQL queries against a Jena Fuseki server
-- Execute SPARQL updates to modify RDF data
-- List available named graphs in the dataset
+- Execute SPARQL queries and updates against a Jena Fuseki server
+- Read, replace and delete whole named graphs over the Graph Store Protocol
+- Load RDF files from disk without their content passing through the context
+- Admin operations: list datasets, server status, backup, compact, task status
+- Bounded responses: a default LIMIT, a hard character cut-off, output to file
+- A read-only mode, and file access confined to one directory
 - HTTP Basic authentication support for Jena Fuseki
 - Compatible with the Model Context Protocol
 
